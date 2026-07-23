@@ -1,48 +1,40 @@
+from faster_whisper import WhisperModel
 import streamlit as st
-import whisper
 import tempfile
 import os
 
-st.set_page_config(
-    page_title="Translate to English",
-    page_icon="🎤",
-    layout="centered"
-)
-
-st.title("🎤 Translate to English")
-
-st.write("Upload a Spanish audio (.wav) file to translate it into English.")
+st.title("Translate to English")
 
 uploaded_file = st.file_uploader(
-    "Browse Audio File",
+    "Upload Audio",
     type=["wav", "mp3", "m4a", "ogg"]
 )
 
-if uploaded_file is not None:
+if uploaded_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+        f.write(uploaded_file.read())
+        audio_path = f.name
 
-    st.audio(uploaded_file)
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(uploaded_file.read())
-        temp_path = tmp.name
-
-    st.info("Loading Whisper model...")
-
-    model = whisper.load_model("small")
-
-    with st.spinner("Translating... Please wait."):
-
-        result = model.transcribe(
-            temp_path,
-            task="translate",
-            language="es",
-            fp16=False
+    @st.cache_resource
+    def load_model():
+        return WhisperModel(
+            "small",
+            device="cpu",
+            compute_type="int8"
         )
 
-    st.success("Translation Complete")
+    model = load_model()
 
-    st.subheader("English Translation")
+    with st.spinner("Translating..."):
+        segments, info = model.transcribe(
+            audio_path,
+            task="translate",
+            language="es"
+        )
 
-    st.write(result["text"])
+    text = "".join(segment.text for segment in segments)
 
-    os.remove(temp_path)
+    st.success("Completed")
+    st.write(text)
+
+    os.remove(audio_path)
