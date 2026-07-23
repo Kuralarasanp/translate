@@ -1,6 +1,4 @@
 streamlit
-openai-whisper
-torch
-ffmpeg-python
-numpy
-whisper
+faster-whisper
+ctranslate2
+av
