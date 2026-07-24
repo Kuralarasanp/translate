@@ -31,8 +31,7 @@ if uploaded_file:
             task="translate",
             language="es"
         )
-    st.info("Translating... Please wait.")
-    
+      
     text = "".join(segment.text for segment in segments)
 
     st.success("Completed")
