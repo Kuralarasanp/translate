@@ -3,7 +3,7 @@ import streamlit as st
 import tempfile
 import os
 
-st.title("Translate to English")
+st.title("🎤 Translate to English")
 
 uploaded_file = st.file_uploader(
     "Upload Audio",
