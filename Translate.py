@@ -25,13 +25,14 @@ if uploaded_file:
 
     model = load_model()
 
-    with st.spinner("Translating..."):
+    with st.spinner("Translating... Please wait."):
         segments, info = model.transcribe(
             audio_path,
             task="translate",
             language="es"
         )
-
+    st.info("Loading Whisper model...")
+    
     text = "".join(segment.text for segment in segments)
 
     st.success("Completed")
