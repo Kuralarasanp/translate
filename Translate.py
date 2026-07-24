@@ -31,7 +31,7 @@ if uploaded_file:
             task="translate",
             language="es"
         )
-    st.info("Loading Whisper model...")
+    st.info("Translating... Please wait.")
     
     text = "".join(segment.text for segment in segments)
 
