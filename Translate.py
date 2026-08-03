@@ -1,7 +1,7 @@
 import streamlit as st
+import whisper
 import tempfile
 import os
-import sys
 import traceback
 import shutil
 
@@ -9,20 +9,6 @@ st.set_page_config(page_title="Translate to English", page_icon="🎤")
 
 st.title("🎤 Translate to English")
 st.caption("Upload a call recording (Spanish or auto-detected) and get an English translation.")
-st.caption(f"Running on Python {sys.version.split()[0]}")
-
-# -------------------------------
-# Import whisper (wrapped so a broken/incompatible dependency
-# shows a real error instead of crashing the whole app blank)
-# -------------------------------
-try:
-    import whisper
-except Exception:
-    st.error("❌ Failed to import the `whisper` package. This usually means one of "
-              "its dependencies (torch, numba, triton) isn't compatible with the "
-              "Python version this app is running on, shown above.")
-    st.code(traceback.format_exc())
-    st.stop()
 
 # -------------------------------
 # Check FFmpeg
@@ -97,93 +83,15 @@ if uploaded_file:
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(uploaded_file.read())
-        raw_audio_path = tmp.name
-
-    # --- Normalize the audio with ffmpeg before handing it to Whisper ---
-    # Call recordings are often 8kHz mono telephony audio (mu-law/A-law),
-    # which can trigger a rare Whisper decoder bug ("cannot reshape tensor
-    # of 0 elements") at segment boundaries. Resampling to 16kHz mono PCM
-    # and padding the tail slightly avoids that edge case.
-    import subprocess
-
-    normalized_path = raw_audio_path + "_norm.wav"
-    audio_path = raw_audio_path  # fallback if normalization fails
-    try:
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-i", raw_audio_path,
-                "-ar", "16000", "-ac", "1",
-                "-af", "apad=pad_dur=0.3",
-                normalized_path,
-            ],
-            check=True,
-            capture_output=True,
-        )
-        audio_path = normalized_path
-    except Exception:
-        pass  # fall back to the raw uploaded file below
+        audio_path = tmp.name
 
     try:
-        transcribe_kwargs = {
-            "task": "translate",
-            "fp16": False,
-            "verbose": False,
-            "condition_on_previous_text": False,
-        }
+        transcribe_kwargs = {"task": "translate", "fp16": False}
         if lang_mode == "Force Spanish (es)":
             transcribe_kwargs["language"] = "es"
 
-        # --- Hook Whisper's internal frame-progress tqdm into a real
-        # Streamlit progress bar (verbose=False is what activates it) ---
-        import whisper.transcribe as _whisper_transcribe_module
-
-        progress_bar = st.progress(0, text="Translating... 0%")
-
-        class _StProgressBar:
-            def __init__(self, total=0, unit=None, disable=False, **kwargs):
-                self.total = total or 1
-                self.n = 0
-
-            def update(self, amount):
-                self.n = min(self.total, self.n + amount)
-                pct = self.n / self.total
-                progress_bar.progress(pct, text=f"Translating... {pct * 100:.0f}%")
-
-            def close(self):
-                pass
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *exc):
-                self.close()
-
-        class _TqdmNamespaceStub:
-            """Stands in for whatever 'tqdm' name whisper.transcribe holds,
-            regardless of whether that's the tqdm module, a function, or
-            anything else -- we don't rely on its shape, only overwrite it."""
-            tqdm = _StProgressBar
-
-        # Save whatever is currently bound to "tqdm" in whisper's namespace,
-        # without dereferencing into it, so restoring it later is always safe.
-        _original_tqdm = getattr(_whisper_transcribe_module, "tqdm", None)
-        patched = False
-        try:
-            _whisper_transcribe_module.tqdm = _TqdmNamespaceStub
-            patched = True
-        except Exception:
-            pass  # if we somehow can't patch it, just fall back to a spinner below
-
-        try:
-            if patched:
-                result = model.transcribe(audio_path, **transcribe_kwargs)
-            else:
-                with st.spinner("Translating... this can take a while on CPU, please be patient."):
-                    result = model.transcribe(audio_path, **transcribe_kwargs)
-        finally:
-            if patched and _original_tqdm is not None:
-                _whisper_transcribe_module.tqdm = _original_tqdm
-            progress_bar.empty()
+        with st.spinner("Translating... this can take a while on CPU, please be patient."):
+            result = model.transcribe(audio_path, **transcribe_kwargs)
 
         st.success("✅ Translation Completed")
 
@@ -209,6 +117,5 @@ if uploaded_file:
         st.code(traceback.format_exc())
 
     finally:
-        for p in (raw_audio_path, normalized_path):
-            if os.path.exists(p):
-                os.remove(p)
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
