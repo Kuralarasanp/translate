@@ -2,73 +2,63 @@ import streamlit as st
 import whisper
 import tempfile
 import os
-import shutil
-import subprocess
 import traceback
+import shutil
 
 st.set_page_config(page_title="Translate to English")
 
 st.title("🎤 Translate to English")
 
-# ===========================
-# Debug Information
-# ===========================
-st.subheader("🔍 Environment Information")
+# -------------------------------
+# Check FFmpeg
+# -------------------------------
+ffmpeg_path = shutil.which("ffmpeg")
 
-st.write("Python Version:")
-import sys
-st.code(sys.version)
+if ffmpeg_path is None:
+    st.error("""
+❌ FFmpeg is not installed or not available in PATH.
 
-st.write("FFmpeg Path:")
-st.code(str(shutil.which("ffmpeg")))
+Please make sure your Streamlit Cloud project contains:
 
-try:
-    result = subprocess.run(
-        ["ffmpeg", "-version"],
-        capture_output=True,
-        text=True
-    )
-    st.write("FFmpeg Version:")
-    st.code(result.stdout[:500])
-except Exception:
-    st.error("Unable to execute FFmpeg")
-    st.code(traceback.format_exc())
+packages.txt
 
-# ===========================
-# Load Whisper Model
-# ===========================
+ffmpeg
+
+Then reboot the app.
+""")
+    st.stop()
+
+# -------------------------------
+# Load Whisper model
+# -------------------------------
 @st.cache_resource
 def load_model():
     return whisper.load_model("small")
 
-# ===========================
-# Upload Audio
-# ===========================
+try:
+    model = load_model()
+except Exception:
+    st.error("❌ Failed to load Whisper model.")
+    st.code(traceback.format_exc())
+    st.stop()
+
+# -------------------------------
+# Upload file
+# -------------------------------
 uploaded_file = st.file_uploader(
     "Upload Audio",
     type=["wav", "mp3", "m4a", "ogg"]
 )
 
-if uploaded_file is not None:
+if uploaded_file:
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(uploaded_file.read())
+        audio_path = tmp.name
 
     try:
-        # Save uploaded file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            tmp.write(uploaded_file.read())
-            audio_path = tmp.name
 
-        st.write("Temporary Audio File:")
-        st.code(audio_path)
-
-        st.write("File Exists:")
-        st.code(str(os.path.exists(audio_path)))
-
-        st.write("File Size:")
-        st.code(str(os.path.getsize(audio_path)))
-
-        model = load_model()
-
-        with st.spinner("Translating... Please wait..."):
+        with st.spinner("Translating..."):
 
             result = model.transcribe(
                 audio_path,
@@ -77,18 +67,17 @@ if uploaded_file is not None:
                 fp16=False
             )
 
-        st.success("Completed!")
-
-        st.subheader("English Translation")
+        st.success("✅ Translation Completed")
         st.write(result["text"])
 
+    except FileNotFoundError as e:
+        st.error("❌ FFmpeg executable not found.")
+        st.code(str(e))
+
     except Exception:
-        st.error("❌ Full Error")
+        st.error("❌ Translation Failed")
         st.code(traceback.format_exc())
 
     finally:
-        try:
-            if "audio_path" in locals() and os.path.exists(audio_path):
-                os.remove(audio_path)
-        except Exception:
-            pass
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
