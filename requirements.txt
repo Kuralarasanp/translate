@@ -1,5 +1,6 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 streamlit==1.60.0
 openai-whisper==20250625
-torch
+torch==2.4.1+cpu
 numpy<2
 ffmpeg-python
