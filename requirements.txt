@@ -1,4 +1,5 @@
 streamlit==1.60.0
 faster-whisper==1.1.1
-ctranslate2==4.4.0
-av
+ctranslate2==4.5.0
+av==15.0.0
+numpy<2
