@@ -1,16 +1,9 @@
-import traceback
 import streamlit as st
+import whisper
 import tempfile
 import os
 
-# Check faster_whisper import
-try:
-    from faster_whisper import WhisperModel
-    st.success("✅ faster_whisper imported successfully.")
-except Exception as e:
-    st.error("❌ Failed to import faster_whisper.")
-    st.code(traceback.format_exc())
-    raise
+st.set_page_config(page_title="Translate to English")
 
 st.title("🎤 Translate to English")
 
@@ -19,46 +12,30 @@ uploaded_file = st.file_uploader(
     type=["wav", "mp3", "m4a", "ogg"]
 )
 
-if uploaded_file:
+@st.cache_resource
+def load_model():
+    return whisper.load_model("small")
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
-        f.write(uploaded_file.read())
-        audio_path = f.name
+if uploaded_file is not None:
 
-    @st.cache_resource
-    def load_model():
-        try:
-            model = WhisperModel(
-                "small",
-                device="cpu",
-                compute_type="int8"
-            )
-            return model
-        except Exception:
-            st.error("❌ Error while loading WhisperModel")
-            st.code(traceback.format_exc())
-            raise
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(uploaded_file.read())
+        audio_path = tmp.name
 
     model = load_model()
 
-    try:
-        with st.spinner("Translating... Please wait..."):
-            segments, info = model.transcribe(
-                audio_path,
-                task="translate",
-                language="es"
-            )
+    with st.spinner("Translating... Please wait..."):
 
-        text = "".join(segment.text for segment in segments)
+        result = model.transcribe(
+            audio_path,
+            task="translate",
+            language="es",
+            fp16=False
+        )
 
-        st.success("Completed")
-        st.write(text)
+    st.success("Completed!")
 
-    except Exception:
-        st.error("❌ Error during transcription")
-        st.code(traceback.format_exc())
-        raise
+    st.subheader("English Translation")
+    st.write(result["text"])
 
-    finally:
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
+    os.remove(audio_path)
