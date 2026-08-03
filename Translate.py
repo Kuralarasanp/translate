@@ -97,10 +97,39 @@ if uploaded_file:
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(uploaded_file.read())
-        audio_path = tmp.name
+        raw_audio_path = tmp.name
+
+    # --- Normalize the audio with ffmpeg before handing it to Whisper ---
+    # Call recordings are often 8kHz mono telephony audio (mu-law/A-law),
+    # which can trigger a rare Whisper decoder bug ("cannot reshape tensor
+    # of 0 elements") at segment boundaries. Resampling to 16kHz mono PCM
+    # and padding the tail slightly avoids that edge case.
+    import subprocess
+
+    normalized_path = raw_audio_path + "_norm.wav"
+    audio_path = raw_audio_path  # fallback if normalization fails
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", raw_audio_path,
+                "-ar", "16000", "-ac", "1",
+                "-af", "apad=pad_dur=0.3",
+                normalized_path,
+            ],
+            check=True,
+            capture_output=True,
+        )
+        audio_path = normalized_path
+    except Exception:
+        pass  # fall back to the raw uploaded file below
 
     try:
-        transcribe_kwargs = {"task": "translate", "fp16": False, "verbose": False}
+        transcribe_kwargs = {
+            "task": "translate",
+            "fp16": False,
+            "verbose": False,
+            "condition_on_previous_text": False,
+        }
         if lang_mode == "Force Spanish (es)":
             transcribe_kwargs["language"] = "es"
 
@@ -180,5 +209,6 @@ if uploaded_file:
         st.code(traceback.format_exc())
 
     finally:
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
+        for p in (raw_audio_path, normalized_path):
+            if os.path.exists(p):
+                os.remove(p)
