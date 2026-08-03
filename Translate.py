@@ -129,12 +129,31 @@ if uploaded_file:
             def __exit__(self, *exc):
                 self.close()
 
-        _original_tqdm = _whisper_transcribe_module.tqdm.tqdm
-        _whisper_transcribe_module.tqdm.tqdm = _StProgressBar
+        class _TqdmNamespaceStub:
+            """Stands in for whatever 'tqdm' name whisper.transcribe holds,
+            regardless of whether that's the tqdm module, a function, or
+            anything else -- we don't rely on its shape, only overwrite it."""
+            tqdm = _StProgressBar
+
+        # Save whatever is currently bound to "tqdm" in whisper's namespace,
+        # without dereferencing into it, so restoring it later is always safe.
+        _original_tqdm = getattr(_whisper_transcribe_module, "tqdm", None)
+        patched = False
         try:
-            result = model.transcribe(audio_path, **transcribe_kwargs)
+            _whisper_transcribe_module.tqdm = _TqdmNamespaceStub
+            patched = True
+        except Exception:
+            pass  # if we somehow can't patch it, just fall back to a spinner below
+
+        try:
+            if patched:
+                result = model.transcribe(audio_path, **transcribe_kwargs)
+            else:
+                with st.spinner("Translating... this can take a while on CPU, please be patient."):
+                    result = model.transcribe(audio_path, **transcribe_kwargs)
         finally:
-            _whisper_transcribe_module.tqdm.tqdm = _original_tqdm
+            if patched and _original_tqdm is not None:
+                _whisper_transcribe_module.tqdm = _original_tqdm
             progress_bar.empty()
 
         st.success("✅ Translation Completed")
