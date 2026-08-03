@@ -1,7 +1,7 @@
 import streamlit as st
-import whisper
 import tempfile
 import os
+import sys
 import traceback
 import shutil
 
@@ -9,6 +9,20 @@ st.set_page_config(page_title="Translate to English", page_icon="🎤")
 
 st.title("🎤 Translate to English")
 st.caption("Upload a call recording (Spanish or auto-detected) and get an English translation.")
+st.caption(f"Running on Python {sys.version.split()[0]}")
+
+# -------------------------------
+# Import whisper (wrapped so a broken/incompatible dependency
+# shows a real error instead of crashing the whole app blank)
+# -------------------------------
+try:
+    import whisper
+except Exception:
+    st.error("❌ Failed to import the `whisper` package. This usually means one of "
+              "its dependencies (torch, numba, triton) isn't compatible with the "
+              "Python version this app is running on, shown above.")
+    st.code(traceback.format_exc())
+    st.stop()
 
 # -------------------------------
 # Check FFmpeg
@@ -86,12 +100,42 @@ if uploaded_file:
         audio_path = tmp.name
 
     try:
-        transcribe_kwargs = {"task": "translate", "fp16": False}
+        transcribe_kwargs = {"task": "translate", "fp16": False, "verbose": False}
         if lang_mode == "Force Spanish (es)":
             transcribe_kwargs["language"] = "es"
 
-        with st.spinner("Translating... this can take a while on CPU, please be patient."):
+        # --- Hook Whisper's internal frame-progress tqdm into a real
+        # Streamlit progress bar (verbose=False is what activates it) ---
+        import whisper.transcribe as _whisper_transcribe_module
+
+        progress_bar = st.progress(0, text="Translating... 0%")
+
+        class _StProgressBar:
+            def __init__(self, total=0, unit=None, disable=False, **kwargs):
+                self.total = total or 1
+                self.n = 0
+
+            def update(self, amount):
+                self.n = min(self.total, self.n + amount)
+                pct = self.n / self.total
+                progress_bar.progress(pct, text=f"Translating... {pct * 100:.0f}%")
+
+            def close(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.close()
+
+        _original_tqdm = _whisper_transcribe_module.tqdm.tqdm
+        _whisper_transcribe_module.tqdm.tqdm = _StProgressBar
+        try:
             result = model.transcribe(audio_path, **transcribe_kwargs)
+        finally:
+            _whisper_transcribe_module.tqdm.tqdm = _original_tqdm
+            progress_bar.empty()
 
         st.success("✅ Translation Completed")
 
