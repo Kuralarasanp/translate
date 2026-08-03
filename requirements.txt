@@ -3,3 +3,4 @@ openai-whisper
 ctranslate2==4.5.0
 av==15.0.0
 numpy<2
+torch
